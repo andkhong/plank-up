@@ -90,13 +90,25 @@ class SessionMachine {
 
   SessionState _state = SessionState.framing;
   Duration _creditedHold = Duration.zero;
-  Duration _graceElapsed = Duration.zero;
   Duration _countdownElapsed = Duration.zero;
   Duration? _lastFrame;
 
+  /// Grace is tracked per cause, never pooled. Time we could not see the user
+  /// must not consume the budget for time their form was actually bad —
+  /// otherwise nine seconds of our own tracking failure, followed by a single
+  /// imperfect frame, settles the attempt instantly. Neither accumulator
+  /// refunds the other, so alternating between the two cannot buy extra time.
+  Duration _pausedGrace = Duration.zero;
+  Duration _lostGrace = Duration.zero;
+
   SessionState get state => _state;
   Duration get creditedHold => _creditedHold;
-  Duration get graceElapsed => _graceElapsed;
+
+  Duration get graceElapsed => switch (_state) {
+        SessionState.paused => _pausedGrace,
+        SessionState.lost => _lostGrace,
+        _ => Duration.zero,
+      };
 
   bool get isTerminal =>
       _state == SessionState.completed ||
@@ -146,7 +158,8 @@ class SessionMachine {
         _countdownElapsed += delta;
         if (_countdownElapsed >= config.countdown) {
           _state = SessionState.holding;
-          _graceElapsed = Duration.zero;
+          _pausedGrace = Duration.zero;
+          _lostGrace = Duration.zero;
         }
         return;
 
@@ -162,23 +175,28 @@ class SessionMachine {
         _state = frame.verdict == FormVerdict.indeterminate
             ? SessionState.lost
             : SessionState.paused;
-        _graceElapsed = Duration.zero;
+        _pausedGrace = Duration.zero;
+        _lostGrace = Duration.zero;
         return;
 
       case SessionState.paused:
       case SessionState.lost:
         if (frame.verdict == FormVerdict.good) {
           _state = SessionState.holding;
-          _graceElapsed = Duration.zero;
+          _pausedGrace = Duration.zero;
+          _lostGrace = Duration.zero;
           return;
         }
-        // Moving between "bad form" and "can't see you" re-targets the budget
-        // without forgiving time already spent.
-        _state = frame.verdict == FormVerdict.indeterminate
-            ? SessionState.lost
-            : SessionState.paused;
-        _graceElapsed += delta;
-        if (_graceElapsed >= _graceBudget) _settle();
+
+        if (frame.verdict == FormVerdict.indeterminate) {
+          _state = SessionState.lost;
+          _lostGrace += delta;
+          if (_lostGrace >= config.graceAfterTrackingLoss) _settle();
+        } else {
+          _state = SessionState.paused;
+          _pausedGrace += delta;
+          if (_pausedGrace >= config.graceAfterFormBreak) _settle();
+        }
         return;
 
       case SessionState.completed:
@@ -187,10 +205,6 @@ class SessionMachine {
         return;
     }
   }
-
-  Duration get _graceBudget => _state == SessionState.lost
-      ? config.graceAfterTrackingLoss
-      : config.graceAfterFormBreak;
 
   Duration _delta(Duration now) {
     final last = _lastFrame;

@@ -220,17 +220,55 @@ void main() {
       expect(m.creditedHold.inMilliseconds, closeTo(25000, 400));
     });
 
-    test('switching between lost and paused does not refund spent grace', () {
+    test('our perception failure never consumes their form-break budget', () {
+      // Nine seconds of tracking loss sits inside its own ten-second budget.
+      // A single bad-form frame arriving afterwards must not settle the
+      // attempt: the user has spent no meaningful time in bad form yet.
       final m = machineFor(target);
       final f = Feeder(m)
         ..startHolding()
         ..run(const Duration(seconds: 20), FormVerdict.good)
-        ..run(const Duration(milliseconds: 2500), FormVerdict.broken);
+        ..run(const Duration(milliseconds: 8900), FormVerdict.indeterminate);
+      expect(m.state, SessionState.lost);
+
+      f.run(const Duration(milliseconds: 100), FormVerdict.broken);
+      expect(m.isTerminal, isFalse,
+          reason: 'timed out for a perception failure we caused');
+      expect(m.state, SessionState.paused);
+    });
+
+    test('switching away and back does not refund spent grace', () {
+      final m = machineFor(target);
+      final f = Feeder(m)
+        ..startHolding()
+        ..run(const Duration(seconds: 20), FormVerdict.good)
+        ..run(const Duration(milliseconds: 2400), FormVerdict.broken);
       expect(m.isTerminal, isFalse);
 
+      // A detour through "can't see you" must not wipe the form-break clock.
       f.run(const Duration(milliseconds: 800), FormVerdict.indeterminate);
       expect(m.state, SessionState.lost);
-      expect(m.graceElapsed.inMilliseconds, greaterThan(3000));
+      expect(m.graceElapsed.inMilliseconds, lessThan(1000),
+          reason: 'the lost budget is its own clock, started fresh');
+
+      f.run(const Duration(milliseconds: 900), FormVerdict.broken);
+      expect(m.state, SessionState.ended,
+          reason: 'form-break grace resumed where it left off');
+    });
+
+    test('each budget is spent independently', () {
+      final m = machineFor(target);
+      final f = Feeder(m)..startHolding();
+      f.run(const Duration(seconds: 20), FormVerdict.good);
+
+      // Alternate below both budgets. Neither accumulator refunds the other,
+      // so this cannot buy unlimited time — the lost clock still fills.
+      for (var i = 0; i < 6; i++) {
+        f.run(const Duration(milliseconds: 1800), FormVerdict.indeterminate);
+        f.run(const Duration(milliseconds: 900), FormVerdict.broken);
+      }
+      expect(m.isTerminal, isTrue,
+          reason: 'alternating causes must not extend the attempt forever');
     });
   });
 

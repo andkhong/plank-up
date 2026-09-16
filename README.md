@@ -28,8 +28,18 @@ app/                        Flutter app
 packages/plankup_platform/  Native modules: pose detection + OS-level blocking
 docs/DESIGN.md              Full design, architecture, QA strategy and market research
 fixtures/                   Recorded landmark streams for evaluator regression tests
-tools/                      Fixture recorder and CI scripts
+tool/                       Fixture validator and CI scripts
 ```
+
+## What the fixtures cannot see
+
+The landmark corpus begins *after* detection already succeeded, so it is
+structurally blind to acquisition failure — the case where the model returns no
+person at all. That matters because the pose model family uses a face detector
+as its person-detector, and that detector has a documented skin-tone recall gap.
+A fixture that starts from landmarks has by construction already passed the step
+most likely to fail. Closing that gap needs recorded video, which needs consent
+management and an artifact store that do not exist yet.
 
 ## Design rules that are easy to break by accident
 

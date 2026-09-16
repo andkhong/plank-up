@@ -55,11 +55,11 @@ void main() {
       expect(partial, lessThan(const Duration(minutes: 15)));
     });
 
-    test('credit depends on effort, not on the tier aimed for', () {
-      // Abandoning a 90s attempt at 40s pays the same as abandoning a 60s one.
-      expect(economy.earnedFor(const Duration(seconds: 40)),
-          economy.earnedFor(const Duration(seconds: 40)));
-    });
+    // "Credit depends on effort, not on the tier aimed for" was asserted here
+    // as earnedFor(40s) == earnedFor(40s), which is true of any function and
+    // proved nothing. The real version — feeding two machines with different
+    // targets an identical frame stream and demanding identical credit — lives
+    // in session/credit_integrity_test.dart, where the target actually exists.
 
     test('midpoint of a segment earns the midpoint reward', () {
       expect(economy.earnedFor(const Duration(seconds: 45)),
