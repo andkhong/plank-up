@@ -16,6 +16,7 @@ import '../domain/exercise/evaluators.dart';
 import '../domain/pose/pose_frame.dart';
 import '../domain/session/session_machine.dart';
 import '../theme/solar_dusk.dart';
+import 'camera_pose.dart';
 import 'synthetic_body.dart';
 
 class SessionDemo extends StatefulWidget {
@@ -46,7 +47,10 @@ class _SessionDemoState extends State<SessionDemo>
 
   double _deviation = 0;
   bool _cameraSees = true;
+  bool _useCamera = false;
   Duration _target = const Duration(seconds: 30);
+
+  final CameraPose _camera = CameraPose();
 
   PoseFrame? _frame;
   EvalOutput? _output;
@@ -74,6 +78,21 @@ class _SessionDemoState extends State<SessionDemo>
     final outstanding = elapsed - _lastRealElapsed;
     if (outstanding < _frameStep) return;
     _lastRealElapsed = elapsed;
+
+    if (_useCamera) {
+      // Real capture runs on real time, gaps and all. The staleness guard is
+      // supposed to fire when frames stop arriving — that is production
+      // behaviour, not something to paper over.
+      _now += outstanding;
+      final frame = _camera.read(_now) ?? emptyFrame(_now);
+      final output = _evaluator.evaluate(frame);
+      _machine.onFrame(SessionFrame(monotonic: _now, verdict: output.verdict));
+      setState(() {
+        _frame = frame;
+        _output = output;
+      });
+      return;
+    }
 
     // Emit at a steady 30 fps, catching up on whatever real time has passed.
     // A browser throttles a background tab to roughly one frame a second, and
@@ -197,11 +216,22 @@ class _SessionDemoState extends State<SessionDemo>
           _Controls(
             deviation: _deviation,
             cameraSees: _cameraSees,
+            useCamera: _useCamera,
+            cameraStatus: _camera.status,
+            cameraError: _camera.error,
+            faults: _output?.faults ?? const {},
             target: _target,
-            credited: _machine.creditedHold,
-            earned: earned,
             onDeviation: (v) => setState(() => _deviation = v),
             onCamera: (v) => setState(() => _cameraSees = v),
+            onUseCamera: (v) => setState(() {
+              _useCamera = v;
+              if (v) {
+                _camera.start();
+              } else {
+                _camera.stop();
+              }
+              _restart();
+            }),
             onTarget: (t) => setState(() {
               _target = t;
               _restart();
@@ -431,24 +461,38 @@ class _Controls extends StatelessWidget {
   const _Controls({
     required this.deviation,
     required this.cameraSees,
+    required this.useCamera,
+    required this.cameraStatus,
+    required this.cameraError,
+    required this.faults,
     required this.target,
-    required this.credited,
-    required this.earned,
     required this.onDeviation,
     required this.onCamera,
+    required this.onUseCamera,
     required this.onTarget,
     required this.onRestart,
   });
 
   final double deviation;
   final bool cameraSees;
+  final bool useCamera;
+  final CameraStatus cameraStatus;
+  final String cameraError;
+  final Set<FaultCode> faults;
   final Duration target;
-  final Duration credited;
-  final Duration earned;
   final ValueChanged<double> onDeviation;
   final ValueChanged<bool> onCamera;
+  final ValueChanged<bool> onUseCamera;
   final ValueChanged<Duration> onTarget;
   final VoidCallback onRestart;
+
+  String _statusLabel() => switch (cameraStatus) {
+        CameraStatus.running => 'tracking',
+        CameraStatus.starting => 'starting…',
+        CameraStatus.error => 'error',
+        CameraStatus.unsupported => 'unsupported here',
+        CameraStatus.idle => 'idle',
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -461,8 +505,10 @@ class _Controls extends StatelessWidget {
           Row(
             children: [
               Text(
-                'HIP DEVIATION  ${deviation >= 0 ? '+' : ''}'
-                '${deviation.toStringAsFixed(0)}°',
+                useCamera
+                    ? 'LIVE CAMERA  ·  ${_statusLabel()}'
+                    : 'HIP DEVIATION  ${deviation >= 0 ? '+' : ''}'
+                        '${deviation.toStringAsFixed(0)}°',
                 style: const TextStyle(
                   color: SolarDuskDark.mutedForeground,
                   fontWeight: FontWeight.w600,
@@ -470,13 +516,29 @@ class _Controls extends StatelessWidget {
                   letterSpacing: 1,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 16),
+              if (faults.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    faults.map((f) => f.name).join('  ·  '),
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: ChartPalette.tertiary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else
+                const Spacer(),
               Text(
-                deviation < -2
-                    ? 'sagging'
-                    : deviation > 2
-                        ? 'piking'
-                        : 'level',
+                useCamera
+                    ? ''
+                    : deviation < -2
+                        ? 'sagging'
+                        : deviation > 2
+                            ? 'piking'
+                            : 'level',
                 style: const TextStyle(
                   color: SolarDuskDark.mutedForeground,
                   fontSize: 13,
@@ -484,34 +546,55 @@ class _Controls extends StatelessWidget {
               ),
             ],
           ),
-          Slider(
-            value: deviation,
-            min: -40,
-            max: 40,
-            activeColor: SolarDuskDark.primary,
-            onChanged: onDeviation,
+          Opacity(
+            opacity: useCamera ? 0.3 : 1,
+            child: Slider(
+              value: deviation,
+              min: -40,
+              max: 40,
+              activeColor: SolarDuskDark.primary,
+              onChanged: useCamera ? null : onDeviation,
+            ),
           ),
-          Row(
+          // Wraps rather than overflows: this panel has to survive a narrow
+          // window, and a Row here silently blows its constraints.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               for (final t in UnlockEconomy.tiers)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text('${t.inSeconds}s'),
-                    selected: target == t,
-                    onSelected: (_) => onTarget(t),
-                  ),
+                ChoiceChip(
+                  label: Text('${t.inSeconds}s'),
+                  selected: target == t,
+                  onSelected: (_) => onTarget(t),
                 ),
-              const SizedBox(width: 16),
               FilterChip(
-                label: const Text('camera sees me'),
-                selected: cameraSees,
-                onSelected: onCamera,
+                label: Text(useCamera ? 'live camera' : 'use real camera'),
+                selected: useCamera,
+                selectedColor: SolarDuskDark.primary,
+                onSelected: onUseCamera,
               ),
-              const Spacer(),
+              if (!useCamera)
+                FilterChip(
+                  label: const Text('camera sees me'),
+                  selected: cameraSees,
+                  onSelected: onCamera,
+                ),
               TextButton(onPressed: onRestart, child: const Text('Restart')),
             ],
           ),
+          if (useCamera && cameraStatus == CameraStatus.error)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                cameraError,
+                style: const TextStyle(
+                  color: SolarDuskDark.destructive,
+                  fontSize: 12,
+                ),
+              ),
+            ),
         ],
       ),
     );

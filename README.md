@@ -57,10 +57,26 @@ management and an artifact store that do not exist yet.
 
 ```bash
 cd app
-flutter test      # 44 passing
+flutter test      # 505 passing
 flutter analyze
+flutter run -d chrome   # the demo harness
 ```
 
-Requires Flutter 3.47+. Xcode and a physical iPhone are required for anything touching
-Screen Time or the camera — neither works in a simulator.
+Requires Flutter 3.47+. Xcode and a physical iPhone are required for Screen Time, which
+does not exist in a simulator.
+
+## The demo harness
+
+`flutter run -d chrome` opens a harness that drives the **real** evaluator, session machine
+and unlock economy — not a mockup. It has two sources:
+
+- **Synthetic** (default): a slider moves hip deviation through a solved-for body, so the
+  form ladder can be exercised deterministically.
+- **Live camera**: MediaPipe pose landmarking in the browser, feeding the same canonical
+  `PoseFrame` the platform channel will carry on device. Inference runs in JS next to the
+  frames and only landmarks cross into Dart — the same boundary as production.
+
+The live camera is a *pipeline* check, not a *form* check. A laptop webcam sits at eye
+level with the user facing it, which is not the plank geometry, so the evaluator will
+correctly decline to score it. What it proves is that real landmarks flow end to end.
 # plank-up
