@@ -63,3 +63,4 @@ flutter analyze
 
 Requires Flutter 3.47+. Xcode and a physical iPhone are required for anything touching
 Screen Time or the camera — neither works in a simulator.
+# plank-up
