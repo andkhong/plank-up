@@ -1,0 +1,8 @@
+.DS_Store
+*.log
+
+# Recorded video used to derive landmark fixtures is consented personal data and
+# never belongs in the repo. Only the derived landmark JSON is versioned.
+fixtures/**/*.mov
+fixtures/**/*.mp4
+fixtures/raw/

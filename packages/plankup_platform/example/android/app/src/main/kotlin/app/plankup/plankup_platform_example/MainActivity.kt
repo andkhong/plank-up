@@ -1,0 +1,5 @@
+package app.plankup.plankup_platform_example
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
