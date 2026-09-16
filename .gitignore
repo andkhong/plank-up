@@ -6,3 +6,7 @@
 fixtures/**/*.mov
 fixtures/**/*.mp4
 fixtures/raw/
+
+# Self-signed dev certificate. The private key must never be committed; the
+# cert is regenerated per machine by tool/README.md.
+tool/certs/
