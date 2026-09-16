@@ -10,6 +10,7 @@ import 'exercise_evaluator.dart';
 import 'incline_plank_evaluator.dart';
 import 'knee_plank_evaluator.dart';
 import 'plank_evaluator.dart';
+import 'pushup_evaluator.dart';
 import 'seated_arm_hold_evaluator.dart';
 import 'wall_sit_evaluator.dart';
 
@@ -21,6 +22,7 @@ export 'form_hysteresis.dart';
 export 'incline_plank_evaluator.dart';
 export 'knee_plank_evaluator.dart';
 export 'plank_evaluator.dart';
+export 'pushup_evaluator.dart';
 export 'seated_arm_hold_evaluator.dart';
 export 'wall_sit_evaluator.dart';
 
@@ -28,6 +30,7 @@ ExerciseEvaluator evaluatorFor(ExerciseId id) => switch (id) {
       ExerciseId.plank => PlankEvaluator(),
       ExerciseId.kneePlank => KneePlankEvaluator(),
       ExerciseId.inclinePlank => InclinePlankEvaluator(),
+      ExerciseId.pushup => PushupEvaluator(),
       ExerciseId.wallSit => WallSitEvaluator(),
       ExerciseId.seatedArmHold => SeatedArmHoldEvaluator(),
       ExerciseId.chairSitToStand => ChairSitToStandEvaluator(),

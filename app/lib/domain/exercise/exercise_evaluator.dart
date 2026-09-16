@@ -13,6 +13,7 @@ enum ExerciseId {
   plank,
   kneePlank,
   inclinePlank,
+  pushup,
   wallSit,
   seatedArmHold,
   chairSitToStand,
