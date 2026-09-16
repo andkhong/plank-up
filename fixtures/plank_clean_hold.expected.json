@@ -1,0 +1,41 @@
+{
+  "formatVersion": 1,
+  "fixture": "plank_clean_hold",
+  "tier": "synthetic",
+  "exercise": "plank",
+  "description": "Three seconds of a straight plank at -3 degrees, phone level, side-on. Reaches a 2s target and completes.",
+  "frameRateHz": 15.0,
+  "provenance": {
+    "generator": "test/support/synthetic_fixtures.dart",
+    "geometry": "hipDeviation=-3deg, obliquity=0deg, roll=0deg"
+  },
+  "session": {
+    "targetMs": 2000,
+    "countdownMs": 400
+  },
+  "labels": [
+    {
+      "fromMs": 0,
+      "toMs": 3067,
+      "verdict": "good",
+      "note": "well inside the <=12 degree good band throughout"
+    }
+  ],
+  "expect": {
+    "state": "completed",
+    "outcome": "completed",
+    "creditedHoldMs": {
+      "min": 2000,
+      "max": 2000
+    },
+    "earnedUnlockMs": {
+      "min": 0,
+      "max": 0
+    }
+  },
+  "blindSpots": [
+    "Landmark-tier blindness: these frames begin after detection already succeeded, so nothing here can observe a person failing to be detected at all — the documented BlazeFace skin-tone recall gap included.",
+    "Noiseless: real landmarks jitter, and a threshold that passes here can still oscillate on a device. Hysteresis and the 4-of-6 smoothing window need recorded fixtures, not these.",
+    "Single body type, single framing, single lighting. Synthetic fixtures sweep the parameters we thought of."
+  ]
+}

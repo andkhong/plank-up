@@ -45,10 +45,14 @@ class EvalOutput {
     this.faults = const {},
     this.primaryMetric,
     this.confidence = 1.0,
+    this.reps = 0,
   });
 
   final Presence presence;
   final FormVerdict verdict;
+
+  /// What to cue the user about. A non-empty set does **not** imply the verdict
+  /// is bad: the degraded band coaches while the clock keeps running.
   final Set<FaultCode> faults;
 
   /// The single number the UI visualises — signed hip deviation for holds,
@@ -57,6 +61,11 @@ class EvalOutput {
   final double? primaryMetric;
 
   final double confidence;
+
+  /// Valid reps completed so far this attempt. Always 0 for the timed holds;
+  /// only chair sit-to-stand counts. Cumulative rather than an edge, so a
+  /// consumer that drops a frame cannot lose a rep.
+  final int reps;
 
   static const EvalOutput unusable = EvalOutput(
     presence: Presence.absent,

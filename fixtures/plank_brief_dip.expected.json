@@ -1,0 +1,51 @@
+{
+  "formatVersion": 1,
+  "fixture": "plank_brief_dip",
+  "tier": "synthetic",
+  "exercise": "plank",
+  "description": "A good hold, two seconds of hips at -28 degrees, then recovery. The dip is shorter than the 3s form grace, so the attempt survives it and resumes where it stopped.",
+  "frameRateHz": 15.0,
+  "provenance": {
+    "generator": "test/support/synthetic_fixtures.dart",
+    "geometry": "hipDeviation -4deg, -28deg during the dip, obliquity=0"
+  },
+  "session": {
+    "targetMs": 30000,
+    "countdownMs": 400
+  },
+  "labels": [
+    {
+      "fromMs": 0,
+      "toMs": 1500,
+      "verdict": "good"
+    },
+    {
+      "fromMs": 1500,
+      "toMs": 3500,
+      "verdict": "broken",
+      "faults": [
+        "hipSag"
+      ],
+      "note": "-28 degrees, past the >22 degree broken band"
+    },
+    {
+      "fromMs": 3500,
+      "toMs": 5067,
+      "verdict": "good",
+      "note": "recovered; accumulation resumes and grace resets"
+    }
+  ],
+  "expect": {
+    "state": "holding",
+    "outcome": null,
+    "creditedHoldMs": {
+      "min": 2466,
+      "max": 2600
+    }
+  },
+  "blindSpots": [
+    "Landmark-tier blindness: these frames begin after detection already succeeded, so nothing here can observe a person failing to be detected at all — the documented BlazeFace skin-tone recall gap included.",
+    "Noiseless: real landmarks jitter, and a threshold that passes here can still oscillate on a device. Hysteresis and the 4-of-6 smoothing window need recorded fixtures, not these.",
+    "Single body type, single framing, single lighting. Synthetic fixtures sweep the parameters we thought of."
+  ]
+}

@@ -1,0 +1,82 @@
+name: CI
+
+# Fast and boring on purpose. The correctness core is pure Dart with injected
+# time and no device, so the whole thing is an analyze and a unit-test run —
+# there is nothing here that needs a simulator, a camera or an entitlement.
+# Anything that does need those (Screen Time enforcement, real pose capture)
+# cannot be automated at all and runs from the written manual script before a
+# release instead.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned to the version this repository is developed against. Flutter bundles
+  # its own Dart SDK, so this pins both. Bump it deliberately.
+  FLUTTER_VERSION: '3.47.4'
+
+jobs:
+  analyze-and-test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      # --- app ------------------------------------------------------------
+      - name: Install app dependencies
+        working-directory: app
+        run: flutter pub get
+
+      # No `dart format --set-exit-if-changed` gate. The tree is not currently
+      # formatter-clean, and turning it on would mean a repo-wide reformat
+      # landing in the same change as the test infrastructure — which makes
+      # every subsequent blame and review harder for no correctness gain.
+      # Worth adding as its own commit, not smuggled in here.
+      - name: Analyze app
+        working-directory: app
+        run: flutter analyze
+
+      # Covers the domain-purity guard (no Flutter, no plugins, no ambient
+      # clock in lib/domain) and the fixture corpus, both of which are ordinary
+      # tests precisely so they fail here rather than being remembered.
+      - name: Test app
+        working-directory: app
+        run: flutter test --reporter expanded
+
+      # --- platform package -----------------------------------------------
+      - name: Install platform package dependencies
+        working-directory: packages/plankup_platform
+        run: flutter pub get
+
+      - name: Analyze platform package
+        working-directory: packages/plankup_platform
+        run: flutter analyze
+
+      - name: Test platform package
+        working-directory: packages/plankup_platform
+        run: flutter test
+
+      # --- fixtures --------------------------------------------------------
+      # Redundant with the corpus test above, deliberately: this one has no
+      # package dependencies, so it keeps working for the on-device fixture
+      # recorder and for any future Swift or Kotlin consumer of the same files.
+      - name: Validate fixture corpus
+        run: dart run tool/validate_fixtures.dart
