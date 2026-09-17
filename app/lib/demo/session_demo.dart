@@ -49,6 +49,7 @@ class _SessionDemoState extends State<SessionDemo>
   bool _cameraSees = true;
   bool _useCamera = false;
   bool _recording = false;
+  bool _showLandmarks = true;
   ExerciseId _exercise = ExerciseId.plank;
   Duration _target = const Duration(seconds: 30);
 
@@ -153,6 +154,23 @@ class _SessionDemoState extends State<SessionDemo>
         .clamp(0.0, 1.0);
   }
 
+  /// How many landmarks the model is confident about, against how many it is
+  /// reporting at all. A wide gap is the interesting case: it means most of the
+  /// skeleton on screen is inferred rather than seen.
+  (int, int) get _trustedJoints {
+    final f = _frame;
+    if (f == null) return (0, 0);
+    var trusted = 0;
+    var reported = 0;
+    for (final joint in Joint.values) {
+      final c = f[joint].confidence;
+      if (c <= 0.05) continue;
+      reported++;
+      if (c >= _LandmarkPainter.trustFloor) trusted++;
+    }
+    return (trusted, reported);
+  }
+
   String get _stateWord {
     switch (_machine.state) {
       case SessionState.countdown:
@@ -205,6 +223,13 @@ class _SessionDemoState extends State<SessionDemo>
                     surface: surface,
                   ),
                 ),
+                // Above the product skeleton, not below it. The spine is drawn
+                // 12px wide and would otherwise swallow the very dots worth
+                // inspecting — the shoulder, hip and ankle it is derived from.
+                if (_showLandmarks)
+                  CustomPaint(
+                    painter: _LandmarkPainter(frame: _frame, ink: ink),
+                  ),
                 _Readout(
                   machine: _machine,
                   word: _stateWord,
@@ -229,6 +254,9 @@ class _SessionDemoState extends State<SessionDemo>
             isFile: _camera.source == PoseSource.file,
             recording: _recording,
             recordedFrames: _camera.recordedFrames,
+            showLandmarks: _showLandmarks,
+            onShowLandmarks: (v) => setState(() => _showLandmarks = v),
+            trustedJoints: _trustedJoints,
             exercise: _exercise,
             onExercise: (e) => setState(() {
               _exercise = e;
@@ -385,6 +413,98 @@ class _Iris extends StatelessWidget {
   }
 }
 
+/// Every tracked landmark, drawn as the model actually reports it.
+///
+/// This is a diagnostic view, not the product one. The session screen shows
+/// seven points and one line because that is what reads at five feet; this
+/// shows all fifteen so it is possible to see *which* joints the model is
+/// confident about and which it is guessing at.
+///
+/// Confidence is the whole point of the overlay. A filled dot is a landmark the
+/// model claims to see; a hollow one is below the threshold the evaluators use
+/// to trust a forearm. In a side-on view the far limbs and often the near wrist
+/// come back hollow — inferred from a learned prior rather than observed — which
+/// is exactly why depth is not decided by elbow angle alone.
+class _LandmarkPainter extends CustomPainter {
+  _LandmarkPainter({required this.frame, required this.ink});
+
+  final PoseFrame? frame;
+  final Color ink;
+
+  /// The confidence floor the pushup evaluator applies to the forearm.
+  static const double trustFloor = 0.6;
+
+  static const List<(Joint, Joint)> _edges = [
+    (Joint.nose, Joint.leftEar),
+    (Joint.nose, Joint.rightEar),
+    (Joint.leftShoulder, Joint.rightShoulder),
+    (Joint.leftShoulder, Joint.leftElbow),
+    (Joint.leftElbow, Joint.leftWrist),
+    (Joint.rightShoulder, Joint.rightElbow),
+    (Joint.rightElbow, Joint.rightWrist),
+    (Joint.leftShoulder, Joint.leftHip),
+    (Joint.rightShoulder, Joint.rightHip),
+    (Joint.leftHip, Joint.rightHip),
+    (Joint.leftHip, Joint.leftKnee),
+    (Joint.leftKnee, Joint.leftAnkle),
+    (Joint.rightHip, Joint.rightKnee),
+    (Joint.rightKnee, Joint.rightAnkle),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final f = frame;
+    if (f == null) return;
+
+    Offset at(Landmark lm) => Offset(lm.x * size.width, lm.y * size.height);
+
+    for (final (a, b) in _edges) {
+      final la = f[a];
+      final lb = f[b];
+      if (la.confidence <= 0.05 || lb.confidence <= 0.05) continue;
+      final weakest =
+          la.confidence < lb.confidence ? la.confidence : lb.confidence;
+      canvas.drawLine(
+        at(la),
+        at(lb),
+        Paint()
+          ..color = ink.withValues(alpha: 0.15 + 0.45 * weakest.clamp(0.0, 1.0))
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke,
+      );
+    }
+
+    for (final joint in Joint.values) {
+      final lm = f[joint];
+      if (lm.confidence <= 0.05) continue;
+      final p = at(lm);
+      final trusted = lm.confidence >= trustFloor;
+
+      if (trusted) {
+        canvas.drawCircle(
+          p,
+          5,
+          Paint()..color = ink.withValues(alpha: 0.85),
+        );
+      } else {
+        // Hollow: the model is reporting a position it did not really see.
+        canvas.drawCircle(
+          p,
+          5,
+          Paint()
+            ..color = ink.withValues(alpha: 0.55)
+            ..strokeWidth = 1.5
+            ..style = PaintingStyle.stroke,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LandmarkPainter old) =>
+      old.frame != frame || old.ink != ink;
+}
+
 class _SkeletonPainter extends CustomPainter {
   _SkeletonPainter({
     required this.frame,
@@ -500,6 +620,9 @@ class _Controls extends StatelessWidget {
     required this.isFile,
     required this.recording,
     required this.recordedFrames,
+    required this.showLandmarks,
+    required this.onShowLandmarks,
+    required this.trustedJoints,
     required this.exercise,
     required this.onExercise,
     required this.onLoadVideo,
@@ -524,6 +647,9 @@ class _Controls extends StatelessWidget {
   final bool isFile;
   final bool recording;
   final int recordedFrames;
+  final bool showLandmarks;
+  final ValueChanged<bool> onShowLandmarks;
+  final (int, int) trustedJoints;
   final ExerciseId exercise;
   final ValueChanged<ExerciseId> onExercise;
   final VoidCallback onLoadVideo;
@@ -635,6 +761,14 @@ class _Controls extends StatelessWidget {
                 selected: useCamera && !isFile,
                 selectedColor: SolarDuskDark.primary,
                 onSelected: onUseCamera,
+              ),
+              FilterChip(
+                avatar: const Icon(Icons.scatter_plot_outlined, size: 18),
+                label: Text(showLandmarks
+                    ? 'landmarks  ${trustedJoints.$1}/${trustedJoints.$2}'
+                    : 'landmarks'),
+                selected: showLandmarks,
+                onSelected: onShowLandmarks,
               ),
               ActionChip(
                 avatar: const Icon(Icons.movie_outlined, size: 18),
