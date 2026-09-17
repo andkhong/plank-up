@@ -2,16 +2,25 @@ import 'dart:js_interop';
 
 import '../domain/pose/pose_frame.dart';
 
-enum CameraStatus { unsupported, idle, starting, running, error }
+enum CameraStatus { unsupported, idle, starting, running, ended, error }
+
+enum PoseSource { none, camera, file }
 
 @JS('plankupPose')
 external _Bridge? get _bridge;
 
 extension type _Bridge(JSObject _) implements JSObject {
   external void start();
+  external void startFile();
   external void stop();
   external JSString status();
   external JSString error();
+  external JSString source();
+  external JSString label();
+  external JSNumber progress();
+  external void setRecording(bool on);
+  external JSNumber recordedFrames();
+  external void downloadFixture(JSString? name);
   external JSArray<JSNumber>? latest();
 }
 
@@ -30,15 +39,38 @@ class CameraPose {
     return switch (b.status().toDart) {
       'starting' => CameraStatus.starting,
       'running' => CameraStatus.running,
+      'ended' => CameraStatus.ended,
       'error' => CameraStatus.error,
       _ => CameraStatus.idle,
     };
   }
 
+  PoseSource get source => switch (_bridge?.source().toDart) {
+        'camera' => PoseSource.camera,
+        'file' => PoseSource.file,
+        _ => PoseSource.none,
+      };
+
   String get error => _bridge?.error().toDart ?? 'pose bridge not loaded';
 
+  String get label => _bridge?.label().toDart ?? '';
+
+  double get progress => _bridge?.progress().toDartDouble ?? 0;
+
+  int get recordedFrames => _bridge?.recordedFrames().toDartInt ?? 0;
+
   void start() => _bridge?.start();
+
+  /// Opens a file picker and runs the same pipeline over a recorded clip.
+  /// Reproducible input at the real geometry, without needing a body on a floor.
+  void startFile() => _bridge?.startFile();
+
   void stop() => _bridge?.stop();
+
+  void setRecording(bool on) => _bridge?.setRecording(on);
+
+  void downloadFixture([String? name]) =>
+      _bridge?.downloadFixture(name?.toJS);
 
   PoseFrame? read(Duration at) {
     final raw = _bridge?.latest();

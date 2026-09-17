@@ -48,6 +48,8 @@ class _SessionDemoState extends State<SessionDemo>
   double _deviation = 0;
   bool _cameraSees = true;
   bool _useCamera = false;
+  bool _recording = false;
+  ExerciseId _exercise = ExerciseId.plank;
   Duration _target = const Duration(seconds: 30);
 
   final CameraPose _camera = CameraPose();
@@ -70,7 +72,7 @@ class _SessionDemoState extends State<SessionDemo>
 
   void _restart() {
     _machine = SessionMachine(target: _target);
-    _evaluator = PlankEvaluator()..reset();
+    _evaluator = evaluatorFor(_exercise)..reset();
     _machine.beginCountdown();
   }
 
@@ -209,6 +211,9 @@ class _SessionDemoState extends State<SessionDemo>
                   ink: ink,
                   earned: earned,
                   metric: _output?.primaryMetric,
+                  reps: _output?.reps ?? 0,
+                  showReps: _exercise == ExerciseId.pushup ||
+                      _exercise == ExerciseId.chairSitToStand,
                 ),
               ],
             ),
@@ -219,6 +224,26 @@ class _SessionDemoState extends State<SessionDemo>
             useCamera: _useCamera,
             cameraStatus: _camera.status,
             cameraError: _camera.error,
+            clipLabel: _camera.label,
+            clipProgress: _camera.progress,
+            isFile: _camera.source == PoseSource.file,
+            recording: _recording,
+            recordedFrames: _camera.recordedFrames,
+            exercise: _exercise,
+            onExercise: (e) => setState(() {
+              _exercise = e;
+              _restart();
+            }),
+            onLoadVideo: () => setState(() {
+              _useCamera = true;
+              _camera.startFile();
+              _restart();
+            }),
+            onRecord: (v) => setState(() {
+              _recording = v;
+              _camera.setRecording(v);
+            }),
+            onSaveFixture: () => _camera.downloadFixture(),
             faults: _output?.faults ?? const {},
             target: _target,
             onDeviation: (v) => setState(() => _deviation = v),
@@ -251,6 +276,8 @@ class _Readout extends StatelessWidget {
     required this.ink,
     required this.earned,
     required this.metric,
+    required this.reps,
+    required this.showReps,
   });
 
   final SessionMachine machine;
@@ -258,6 +285,8 @@ class _Readout extends StatelessWidget {
   final Color ink;
   final Duration earned;
   final double? metric;
+  final int reps;
+  final bool showReps;
 
   @override
   Widget build(BuildContext context) {
@@ -313,9 +342,11 @@ class _Readout extends StatelessWidget {
               ),
               const SizedBox(height: Spacing.xs),
               Text(
-                machine.isTerminal
-                    ? 'earned ${earned.inMinutes} min'
-                    : 'holding ${machine.creditedHold.inSeconds}s',
+                showReps
+                    ? '$reps reps'
+                    : machine.isTerminal
+                        ? 'earned ${earned.inMinutes} min'
+                        : 'holding ${machine.creditedHold.inSeconds}s',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -464,6 +495,16 @@ class _Controls extends StatelessWidget {
     required this.useCamera,
     required this.cameraStatus,
     required this.cameraError,
+    required this.clipLabel,
+    required this.clipProgress,
+    required this.isFile,
+    required this.recording,
+    required this.recordedFrames,
+    required this.exercise,
+    required this.onExercise,
+    required this.onLoadVideo,
+    required this.onRecord,
+    required this.onSaveFixture,
     required this.faults,
     required this.target,
     required this.onDeviation,
@@ -478,6 +519,16 @@ class _Controls extends StatelessWidget {
   final bool useCamera;
   final CameraStatus cameraStatus;
   final String cameraError;
+  final String clipLabel;
+  final double clipProgress;
+  final bool isFile;
+  final bool recording;
+  final int recordedFrames;
+  final ExerciseId exercise;
+  final ValueChanged<ExerciseId> onExercise;
+  final VoidCallback onLoadVideo;
+  final ValueChanged<bool> onRecord;
+  final VoidCallback onSaveFixture;
   final Set<FaultCode> faults;
   final Duration target;
   final ValueChanged<double> onDeviation;
@@ -487,7 +538,10 @@ class _Controls extends StatelessWidget {
   final VoidCallback onRestart;
 
   String _statusLabel() => switch (cameraStatus) {
-        CameraStatus.running => 'tracking',
+        CameraStatus.running => isFile
+            ? 'playing  ${(clipProgress * 100).toStringAsFixed(0)}%'
+            : 'tracking',
+        CameraStatus.ended => 'clip finished',
         CameraStatus.starting => 'starting…',
         CameraStatus.error => 'error',
         CameraStatus.unsupported => 'unsupported here',
@@ -563,6 +617,13 @@ class _Controls extends StatelessWidget {
             runSpacing: 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              for (final e in const [ExerciseId.plank, ExerciseId.pushup])
+                ChoiceChip(
+                  label: Text(e == ExerciseId.plank ? 'plank' : 'pushups'),
+                  selected: exercise == e,
+                  selectedColor: SolarDuskDark.accent,
+                  onSelected: (_) => onExercise(e),
+                ),
               for (final t in UnlockEconomy.tiers)
                 ChoiceChip(
                   label: Text('${t.inSeconds}s'),
@@ -570,11 +631,37 @@ class _Controls extends StatelessWidget {
                   onSelected: (_) => onTarget(t),
                 ),
               FilterChip(
-                label: Text(useCamera ? 'live camera' : 'use real camera'),
-                selected: useCamera,
+                label: Text(useCamera && !isFile ? 'live camera' : 'use real camera'),
+                selected: useCamera && !isFile,
                 selectedColor: SolarDuskDark.primary,
                 onSelected: onUseCamera,
               ),
+              ActionChip(
+                avatar: const Icon(Icons.movie_outlined, size: 18),
+                label: Text(isFile && clipLabel.isNotEmpty
+                    ? clipLabel
+                    : 'load a video'),
+                onPressed: onLoadVideo,
+              ),
+              if (useCamera)
+                FilterChip(
+                  avatar: Icon(
+                    recording ? Icons.fiber_manual_record : Icons.circle_outlined,
+                    size: 18,
+                    color: recording ? SolarDuskDark.destructive : null,
+                  ),
+                  label: Text(recording
+                      ? 'recording  $recordedFrames'
+                      : 'record landmarks'),
+                  selected: recording,
+                  onSelected: onRecord,
+                ),
+              if (recordedFrames > 0)
+                ActionChip(
+                  avatar: const Icon(Icons.download, size: 18),
+                  label: const Text('save fixture'),
+                  onPressed: onSaveFixture,
+                ),
               if (!useCamera)
                 FilterChip(
                   label: const Text('camera sees me'),
